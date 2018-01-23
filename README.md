@@ -1,4 +1,4 @@
-#Contracts
+# Contracts
 
 Potent Primitives projects are centered around these contracts.
 
