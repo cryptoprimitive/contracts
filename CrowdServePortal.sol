@@ -1,3 +1,39 @@
+/*
+In all states except the Ending state:
+    Anyone can contribute and receive tokens at a ratio of 1 token : 1 ETH.
+    Contributors can burn their tokens to recall their contribution, but the recall is subject to a burn fee depending on contract stage.
+    Contributors and the Worker can make statements
+        Contributors can optionally burn tokens as part of the statement.
+
+The contract starts in the Inactive state.
+In the Inactive state:
+    Contributors can recall deposited funds with no burn fee.
+    There is no project set.
+    previewStageEndTime and roundEndTime are both ignored.
+    The worker can call beginProject with proposalString, previewStageInterval, and activeInterval
+        This moves the the contract to the Active state (Preview stage)
+
+In the Active state:
+    The worker is expected to make public progress on his proposal described in proposalString
+    In the Preview stage:
+        Contributors can recall their contributions, but 10% of the contribution is burned.
+    After the Preview stage:
+        Contributors can recall their contributions, but 50% of the contribution is burned.
+    After activeInterval has passed, worker can call tryRoundEnd, triggering the Ending state.
+
+Because mappings cannot be directly deleted, we must iterate through all contributors and reset each balance.
+Due to gas limits, tryRoundEnd may have to be called several times to iterate over every contributor.
+The function of the Ending state is to ensure this process is eventually completed.
+
+In the Ending state:
+    Most functions, including ERC223 functionality, is halted.
+    Any user can make subsequent calls to tryRoundEnd.
+    Each call to tryRoundEnd iterates further through the list of contributors and sets their balance to 0 (destroying the tokens)
+    Once all balances have been reset:
+        The worker receives the contract's remaining balance.
+        The contract returns to the Inactive state.
+*/
+
 pragma solidity ^0.4.19;
 
 contract ERC223ReceivingContract {
@@ -9,6 +45,8 @@ contract CrowdServePortal {
     
     // Set upon instantiation and never changed:
     uint public minPreviewInterval; // This gives contributors a guaranteed minimum time to recall their funds
+    uint public minContribution; // Gas required to completely end a round increases with number of contributors;
+                                 // minContribution allows the worker to disallow contributions that aren't worth this added cost.
     address public worker;
     
     enum State {Active, Ending, Inactive}
@@ -17,13 +55,14 @@ contract CrowdServePortal {
     uint public previewStageEndTime;
     uint public roundEndTime;
     
-    uint public totalSupply = 0;
     
     mapping (address => uint) private balances;
     address[] public contributors; // used in the Ending state to reset all balances
     uint private balanceResetIterator; // only used in the Ending state
     
-    uint public totalRecalled = 0; // tracking variable; does not affect contract operation logic
+    // tracking variables; these do not affect contract operation logic
+    uint public totalRecalled = 0; 
+    uint public totalSupply = 0;
     
     
     event RoundBegun(string proposalString, uint previewStageEndTime, uint roundEndTime);
@@ -42,10 +81,11 @@ contract CrowdServePortal {
     modifier notInState(State s) {require(state != s); _; }
     
     
-    function CrowdServePortal(address _worker, uint _minPreviewInterval)
+    function CrowdServePortal(address _worker, uint _minPreviewInterval, uint _minContribution)
     public {
         worker = _worker;
         minPreviewInterval = _minPreviewInterval;
+        minContribution = _minContribution;
         
         state = State.Inactive;
     }
@@ -55,17 +95,17 @@ contract CrowdServePortal {
         burnAddress.transfer(amount);
     }
     
-    function beginMainRound(string proposalString, uint previewStageInterval, uint activeInterval)
+    function beginProjectRound(string proposalString, uint previewStageInterval, uint roundInterval)
     external
     onlyWorker()
     inState(State.Inactive) {
         require(previewStageInterval >= minPreviewInterval);
-        require(previewStageInterval < activeInterval);
+        require(previewStageInterval < roundInterval);
         
         state = State.Active;
         
         previewStageEndTime = now + previewStageInterval;
-        roundEndTime = now + activeInterval;
+        roundEndTime = now + roundInterval;
         
         RoundBegun(proposalString, previewStageEndTime, roundEndTime);
     }
@@ -74,6 +114,8 @@ contract CrowdServePortal {
     external
     payable 
     notInState(State.Ending) {
+        require(msg.value >= minContribution);
+        
         totalSupply += msg.value;
         if (balances[msg.sender] == 0) {
             contributors.push(msg.sender);
