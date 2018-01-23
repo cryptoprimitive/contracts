@@ -40,7 +40,7 @@ contract ERC223ReceivingContract {
     function tokenFallback(address _from, uint _value, bytes _data) public;
 }
 
-contract CrowdServePortal {
+contract CrowdServe {
     address constant public burnAddress = 0x0;
     
     // Set upon instantiation and never changed:
@@ -81,7 +81,7 @@ contract CrowdServePortal {
     modifier notInState(State s) {require(state != s); _; }
     
     
-    function CrowdServePortal(address _worker, uint _minPreviewInterval, uint _minContribution)
+    function CrowdServe(address _worker, uint _minPreviewInterval, uint _minContribution)
     public {
         worker = _worker;
         minPreviewInterval = _minPreviewInterval;
