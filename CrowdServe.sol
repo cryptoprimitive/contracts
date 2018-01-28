@@ -61,6 +61,7 @@ contract CrowdServe {
     uint private balanceResetIterator; // only used in the Ending state
     
     // tracking variables; these do not affect contract operation logic
+    uint public totalContributed = 0;
     uint public totalRecalled = 0; 
     uint public totalSupply = 0;
     
@@ -117,6 +118,7 @@ contract CrowdServe {
         require(msg.value >= minContribution);
         
         totalSupply += msg.value;
+        totalContributed += msg.value;
         if (balances[msg.sender] == 0) {
             contributors.push(msg.sender);
         }
@@ -185,7 +187,6 @@ contract CrowdServe {
             uint iteratorLimit = balanceResetIterator + maxLoops;
             while (balanceResetIterator < iteratorLimit && balanceResetIterator < contributors.length) {
                 //maybe add some way to retain history of token ownership, such as creating another token
-                totalSupply -= balances[contributors[balanceResetIterator]];
                 balances[contributors[balanceResetIterator]] = 0;
                 balanceResetIterator ++;
             }
@@ -193,7 +194,9 @@ contract CrowdServe {
                 RoundEnded(totalRecalled, this.balance);
                 
                 delete contributors;
+                totalContributed = 0;
                 totalRecalled = 0;
+                totalSupply = 0;
                 worker.transfer(this.balance);
                 state = State.Inactive;
             }
