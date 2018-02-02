@@ -33,7 +33,7 @@
 
 pragma solidity ^ 0.4.19;
 contract BurnablePaymentFactory {
-	event newBP(address indexed BPAddress, bool payerOpened, address creator, uint deposited, uint commitThreshold, uint autoreleaseInterval, string title, string initialStatement);
+	event BPCreated(address indexed BPAddress, bool payerOpened, address creator, uint deposited, uint commitThreshold, uint autoreleaseInterval, string title, string initialStatement);
     
 	//contract address array
 	address[]public BPs;
@@ -50,8 +50,8 @@ contract BurnablePaymentFactory {
 	payable
 	returns(address) {
 		//pass along any ether to the constructor
-		address newBPAddr = (new BurnablePayment).value(msg.value)(true, creator, commitThreshold, autoreleaseInterval, title, initialStatement);
-		newBP(newBPAddr, payerOpened, creator, msg.value, commitThreshold, autoreleaseInterval, title, initialStatement);
+		address newBPAddr = (new BurnablePayment).value(msg.value)(payerOpened, creator, commitThreshold, autoreleaseInterval, title, initialStatement);
+		BPCreated(newBPAddr, payerOpened, creator, msg.value, commitThreshold, autoreleaseInterval, title, initialStatement);
 
 		BPs.push(newBPAddr);
 
@@ -66,7 +66,7 @@ contract BurnablePayment {
 	//BP will start with a payer or a worker but not both
 	address public payer;
 	address public worker;
-	address constant burnAddress = 0x0;
+	address constant BURN_ADDRESS = 0x0;
 	
 	//Set to true if fundsRecovered is called
 	bool recovered = false;
@@ -123,7 +123,7 @@ contract BurnablePayment {
             require(msg.sender == payer);
         }
         else if (state == State.WorkerOpened) {
-            require(message.sender == worker);
+            require(msg.sender == worker);
         }
         else {
             revert();        
@@ -144,10 +144,10 @@ contract BurnablePayment {
 	event AutoreleaseDelayed();
 	event AutoreleaseTriggered();
 
-	function BurnablePayment(bool _payerIsOpening, address _creator, uint _commitThreshold, uint _autoreleaseInterval, string _title, string initialStatement)
+	function BurnablePayment(bool _payerOpened, address _creator, uint _commitThreshold, uint _autoreleaseInterval, string _title, string initialStatement)
 	public
 	payable {
-		Created(this, _payerOpened, _payer, _commitThreshold, _autoreleaseInterval, _title);
+		Created(this, _payerOpened, _creator, _commitThreshold, _autoreleaseInterval, _title);
 
 		if (msg.value > 0) {
 		    //Here we use tx.origin instead of msg.sender (msg.sender is just the factory contract)
@@ -157,20 +157,26 @@ contract BurnablePayment {
 		
 		title = _title;
 
-        if (_payerIsOpening) {
+        if (_payerOpened) {
             state = State.PayerOpened;
-            payer = creator;
+            payer = _creator;
         }
         else {
             state = State.WorkerOpened;
-            worker = creator;
+            worker = _creator;
         }
 
 		commitThreshold = _commitThreshold;
 		autoreleaseInterval = _autoreleaseInterval;
 
-		if (bytes(initialStatement).length > 0)
-		    PayerStatement(initialStatement);
+		if (bytes(initialStatement).length > 0) {
+		    if (_payerOpened) {
+		        PayerStatement(initialStatement);
+		    }
+		    else {
+		        WorkerStatement(initialStatement);
+		    }
+		}
 	}
 
 	function getFullState()
@@ -208,8 +214,8 @@ contract BurnablePayment {
 
 	function commit()
 	public
-	inOpenState();
-	payable{
+	inOpenState()
+	payable {
 		require(msg.value == commitThreshold);
 
 		if (msg.value > 0) {
@@ -230,7 +236,7 @@ contract BurnablePayment {
 
 	function internalBurn(uint amount)
 	private {
-		burnAddress.transfer(amount);
+		BURN_ADDRESS.transfer(amount);
 
 		amountBurned += amount;
 		FundsBurned(amount);
