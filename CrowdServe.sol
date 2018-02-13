@@ -94,9 +94,10 @@ contract CrowdServe {
     function getFullState()
     public
     constant
-    returns (uint, uint, address, State, uint, uint, uint, uint, uint)
+    returns (uint, uint, address, State, bool, uint, uint, uint, uint, uint)
     {
-        return (minPreviewInterval, minContribution, worker, state, previewStageEndTime, roundEndTime, totalContributed, totalRecalled, totalSupply);
+        bool inPreview = (state == State.Active &&  now < previewStageEndTime);
+        return (minPreviewInterval, minContribution, worker, state, inPreview, previewStageEndTime, roundEndTime, totalContributed, totalRecalled, totalSupply);
     }
     
     function burn(uint amount)
