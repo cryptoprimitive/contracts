@@ -3,7 +3,7 @@ In all states except the Ending state:
     Anyone can contribute and receive tokens at a ratio of 1 token : 1 ETH.
     Contributors can burn their tokens to recall their contribution, but the recall is subject to a burn fee depending on contract stage.
     Contributors and the Worker can make statements
-        Contributors can optionally burn tokens as part of the statement.
+        Contributors can optionally burn tokens as part of the statement (as some interfaces may prioritize messages with high burns or ignore 0-burn messages).
 
 The contract starts in the Inactive state.
 In the Inactive state:
@@ -23,7 +23,7 @@ In the Active state:
 
 Because mappings cannot be directly deleted, we must iterate through all contributors and reset each balance.
 Due to gas limits, tryRoundEnd may have to be called several times to iterate over every contributor.
-The function of the Ending state is to ensure this process is eventually completed.
+The purpose of the Ending state is to ensure this process is eventually completed safely.
 
 In the Ending state:
     Most functions, including ERC223 functionality, is halted.
@@ -89,6 +89,14 @@ contract CrowdServe {
         minContribution = _minContribution;
         
         state = State.Inactive;
+    }
+    
+    function getFullState()
+    public
+    constant
+    returns (uint, uint, address, State, uint, uint, uint, uint, uint)
+    {
+        return (minPreviewInterval, minContribution, worker, state, previewStageEndTime, roundEndTime, totalContributed, totalRecalled, totalSupply);
     }
     
     function burn(uint amount)
@@ -187,18 +195,20 @@ contract CrowdServe {
             uint iteratorLimit = balanceResetIterator + maxLoops;
             while (balanceResetIterator < iteratorLimit && balanceResetIterator < contributors.length) {
                 //maybe add some way to retain history of token ownership, such as creating another token
+                totalSupply -= balances[contributors[balanceResetIterator]];
                 balances[contributors[balanceResetIterator]] = 0;
                 balanceResetIterator ++;
             }
             if (balanceResetIterator == contributors.length) {
+                assert(totalSupply == 0);
                 RoundEnded(totalRecalled, this.balance);
                 
                 delete contributors;
-                totalContributed = 0;
-                totalRecalled = 0;
-                totalSupply = 0;
                 worker.transfer(this.balance);
+                
                 state = State.Inactive;
+                totalRecalled = 0;
+                totalContributed = 0;
             }
         }
     }
