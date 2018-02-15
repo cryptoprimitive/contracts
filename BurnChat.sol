@@ -12,7 +12,6 @@ contract BurnChatManager {
     
     ActiveMessage[] public activeMessages;
     
-    event MessageImmediatelySmoked(address from, string message, uint amountBurned);
     event NewMessage(uint messageID, address from, string message, uint amountBurned, uint amountDeposited, uint finalizeTime, uint burnFactor);
     event MessageBurned(uint messageID, address burner, uint initiatingBurn, uint resultingBurn);
     event MessageTipped(uint messageID, address tipper, uint amount);
@@ -33,18 +32,17 @@ contract BurnChatManager {
         
         uint amountDeposited = msg.value - initialBurn;
         
-        if (amountDeposited == 0) {
-            //With no deposit, the messsage should be immediately smoked.
-            MessageImmediatelySmoked(msg.sender, message, initialBurn);
-            return;
-        }
-        
         uint finalizeTime = now + finalizeInterval;
         
         activeMessages.push(ActiveMessage({from:msg.sender, balance:amountDeposited, burnFactor:burnFactor, finalizeTime:finalizeTime}));
         uint messageID = activeMessages.length - 1;
         
         NewMessage(messageID, msg.sender, message, initialBurn, amountDeposited, finalizeTime, burnFactor);
+        
+        if (amountDeposited == 0) {
+            delete activeMessages[messageID];
+            MessageSmoked(messageID);
+        }
         
         return messageID;
     }
