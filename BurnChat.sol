@@ -68,9 +68,17 @@ contract BurnChatManager {
         require(activeMessages[messageID].from != 0x0);//Require the message exists
         
         uint initiatingBurn = msg.value;
-        uint attemptedBurn = (msg.value*1000)/activeMessages[messageID].burnFactor;
+        
+        uint attemptedBurn;
+        if (activeMessages[messageID].burnFactor == 0) {
+            attemptedBurn = activeMessages[messageID].balance;
+        }
+        else {
+            attemptedBurn = (msg.value*1000)/activeMessages[messageID].burnFactor;
+        }
         
         uint resultingBurn;
+        
         if (attemptedBurn >= activeMessages[messageID].balance) {
             resultingBurn = activeMessages[messageID].balance;
             
