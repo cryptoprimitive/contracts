@@ -2,7 +2,7 @@
 In all states except the Ending state:
     Anyone can contribute and receive tokens at a ratio of 1 token : 1 ETH.
     Contributors can burn their tokens to recall their contribution, but the recall is subject to a burn fee depending on contract stage.
-    Contributors and the Worker can make statements
+    Contributors and the Producer can make statements
         Contributors can optionally burn tokens as part of the statement (as some interfaces may prioritize messages with high burns or ignore 0-burn messages).
 
 The contract starts in the Inactive state.
@@ -10,16 +10,16 @@ In the Inactive state:
     Contributors can recall deposited funds with no burn fee.
     There is no project set.
     previewStageEndTime and roundEndTime are both ignored.
-    The worker can call beginProject with proposalString, previewStageInterval, and activeInterval
+    The producer can call beginProject with proposalString, previewStageInterval, and activeInterval
         This moves the the contract to the Active state (Preview stage)
 
 In the Active state:
-    The worker is expected to make public progress on his proposal described in proposalString
+    The producer is expected to make public progress on his proposal described in proposalString
     In the Preview stage:
         Contributors can recall their contributions, but 10% of the contribution is burned.
     After the Preview stage:
         Contributors can recall their contributions, but 50% of the contribution is burned.
-    After activeInterval has passed, worker can call tryRoundEnd, triggering the Ending state.
+    After activeInterval has passed, producer can call tryRoundEnd, triggering the Ending state.
 
 Because mappings cannot be directly deleted, we must iterate through all contributors and reset each balance.
 Due to gas limits, tryRoundEnd may have to be called several times to iterate over every contributor.
@@ -30,11 +30,11 @@ In the Ending state:
     Any user can make subsequent calls to tryRoundEnd.
     Each call to tryRoundEnd iterates further through the list of contributors and sets their balance to 0 (destroying the tokens)
     Once all balances have been reset:
-        The worker receives the contract's remaining balance.
+        The producer receives the contract's remaining balance.
         The contract returns to the Inactive state.
 */
 
-pragma solidity ^0.4.19;
+pragma solidity ^0.4.20;
 
 contract ERC223ReceivingContract {
     function tokenFallback(address _from, uint _value, bytes _data) public;
@@ -46,8 +46,8 @@ contract CrowdServe {
     // Set upon instantiation and never changed:
     uint public minPreviewInterval; // This gives contributors a guaranteed minimum time to recall their funds
     uint public minContribution; // Gas required to completely end a round increases with number of contributors;
-                                 // minContribution allows the worker to disallow contributions that aren't worth this added cost.
-    address public worker;
+                                 // minContribution allows the producer to disallow contributions that aren't worth this added cost.
+    address public producer;
     
     enum State {Active, Ending, Inactive}
     State public state;
@@ -74,17 +74,18 @@ contract CrowdServe {
     event FundsRecalled(address contributor, uint amountBurned, uint amountReturned, string message);
     
     event ContributorStatement(address contributor, uint amountBurned, string message);
-    event WorkerStatement(string message);
+    event ProducerStatement(string message);
     
     
-    modifier onlyWorker() {require(msg.sender == worker); _; }
+    modifier onlyProducer() {require(msg.sender == producer); _; }
+    modifier onlyContributor() {require(balances[msg.sender] > 0); _; }
     modifier inState(State s) {require(state == s); _; }
     modifier notInState(State s) {require(state != s); _; }
     
     
-    function CrowdServe(address _worker, uint _minPreviewInterval, uint _minContribution)
+    function CrowdServe(address _producer, uint _minPreviewInterval, uint _minContribution)
     public {
-        worker = _worker;
+        producer = _producer;
         minPreviewInterval = _minPreviewInterval;
         minContribution = _minContribution;
         
@@ -97,7 +98,7 @@ contract CrowdServe {
     returns (uint, uint, address, State, bool, uint, uint, uint, uint, uint)
     {
         bool inPreview = (state == State.Active &&  now < previewStageEndTime);
-        return (minPreviewInterval, minContribution, worker, state, inPreview, previewStageEndTime, roundEndTime, totalContributed, totalRecalled, totalSupply);
+        return (minPreviewInterval, minContribution, producer, state, inPreview, previewStageEndTime, roundEndTime, totalContributed, totalRecalled, totalSupply);
     }
     
     function burn(uint amount)
@@ -107,7 +108,7 @@ contract CrowdServe {
     
     function beginProjectRound(string proposalString, uint previewStageInterval, uint roundInterval)
     external
-    onlyWorker()
+    onlyProducer()
     inState(State.Inactive) {
         require(previewStageInterval >= minPreviewInterval);
         require(previewStageInterval < roundInterval);
@@ -161,6 +162,7 @@ contract CrowdServe {
     
     function contributorStatement(uint burnAmount, string message)
     external
+    onlyContributor()
     notInState(State.Ending) {
         require(burnAmount <= balances[msg.sender]);
         
@@ -174,17 +176,17 @@ contract CrowdServe {
         ContributorStatement(msg.sender, burnAmount, message);
     }
     
-    function workerStatement(string message)
+    function producerStatement(string message)
     external
-    onlyWorker() {
-        WorkerStatement(message);
+    onlyProducer() {
+        ProducerStatement(message);
     }
     
     function tryRoundEnd(uint maxLoops)
     external 
     notInState(State.Inactive) {
         if (state == State.Active) {
-            require(msg.sender == worker);
+            require(msg.sender == producer);
             require(now >= roundEndTime);
             
             state = State.Ending;
@@ -205,7 +207,7 @@ contract CrowdServe {
                 RoundEnded(totalRecalled, this.balance);
                 
                 delete contributors;
-                worker.transfer(this.balance);
+                producer.transfer(this.balance);
                 
                 state = State.Inactive;
                 totalRecalled = 0;
